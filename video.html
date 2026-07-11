@@ -101,7 +101,6 @@
 
   canvas{display:none;}
   #outputVideo{width:100%;background:#000;display:none;margin-top:8px;}
-  #downloadLink{display:none;margin-top:6px;}
   #shareBtn{display:none;margin-top:6px;}
 </style>
 </head>
@@ -141,7 +140,6 @@
     <div id="statusLine"></div>
     <canvas id="canvas" width="1280" height="720"></canvas>
     <video id="outputVideo" controls playsinline></video>
-    <a class="btn btn-block" id="downloadLink" download="clip_studio_output.mp4">&#8595; DOWNLOAD</a>
     <button class="btn btn-block" id="shareBtn">&#128228; 共有 → 動画を保存</button>
   </div>
 
@@ -161,7 +159,6 @@
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
   const outputVideo = document.getElementById('outputVideo');
-  const downloadLink = document.getElementById('downloadLink');
   const shareBtn = document.getElementById('shareBtn');
 
   function timestampName(){
@@ -459,30 +456,50 @@
     ctx.drawImage(v, dx, dy, dw, dh);
   }
 
+  function seekTo(v, t){
+    return new Promise(resolve=>{
+      if(Math.abs(v.currentTime - t) < 0.001 && v.readyState >= 2){ resolve(); return; }
+      function onSeeked(){ v.removeEventListener('seeked', onSeeked); resolve(); }
+      v.addEventListener('seeked', onSeeked);
+      v.currentTime = t;
+    });
+  }
+
   function playClip(seqItem, clip, cw, ch){
-    return new Promise((resolve)=>{
+    return new Promise(async (resolve)=>{
       const v = clip.videoEl;
-      let rafId;
-      function onSeeked(){
-        v.removeEventListener('seeked', onSeeked);
-        clip.gainNode.gain.value = seqItem.audioOn ? 1 : 0;
-        v.play().catch(()=>{});
-        rafId = requestAnimationFrame(loop);
-      }
-      function loop(){
+      let stopped = false;
+
+      function checkAndContinue(mediaTime){
+        if(stopped) return;
+        const t = (typeof mediaTime === 'number') ? mediaTime : v.currentTime;
         drawFrame(v, cw, ch);
-        if(v.currentTime >= seqItem.outPoint - 0.03 || v.ended || v.paused){
+        if(t >= seqItem.outPoint - 0.02 || v.ended){
+          stopped = true;
           v.pause();
           clip.gainNode.gain.value = 0;
-          cancelAnimationFrame(rafId);
           resolve();
           return;
         }
-        rafId = requestAnimationFrame(loop);
+        scheduleNext();
       }
+      function scheduleNext(){
+        if(v.requestVideoFrameCallback){
+          v.requestVideoFrameCallback((now, metadata)=> checkAndContinue(metadata.mediaTime));
+        } else {
+          requestAnimationFrame(()=> checkAndContinue());
+        }
+      }
+
       v.pause();
-      v.currentTime = seqItem.inPoint;
-      v.addEventListener('seeked', onSeeked);
+      await seekTo(v, seqItem.inPoint);
+      // draw the freshly-seeked frame immediately so the canvas is never blank
+      // for even a moment before playback begins (this was the cause of the
+      // black flash at the start of each cut).
+      drawFrame(v, cw, ch);
+      clip.gainNode.gain.value = seqItem.audioOn ? 1 : 0;
+      await v.play().catch(()=>{});
+      scheduleNext();
     });
   }
 
@@ -546,6 +563,14 @@
 
     const totalDur = sequence.reduce((s,i)=> s + (i.outPoint-i.inPoint), 0);
     let elapsed = 0;
+
+    // Pre-roll: seek the first clip and paint its frame onto the canvas
+    // BEFORE recording starts, so the exported file never opens on a black frame.
+    statusLine.textContent = '準備中... (先頭フレーム読み込み)';
+    const firstSeq = sequence[0];
+    const firstClip = clips.find(c=>c.id===firstSeq.clipId);
+    await seekTo(firstClip.videoEl, firstSeq.inPoint);
+    drawFrame(firstClip.videoEl, cw, ch);
 
     const done = new Promise(resolve=>{ recorder.onstop = resolve; });
     recorder.start();
