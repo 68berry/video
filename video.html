@@ -31,6 +31,13 @@
   .title-link{background:none;border:none;color:var(--bright);font-family:inherit;
     font-size:13px;letter-spacing:1px;cursor:pointer;padding:0;display:flex;align-items:center;}
   .title-link:active{opacity:.7;}
+  .version-popup-backdrop{position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.55);
+    display:flex;align-items:center;justify-content:center;}
+  .version-popup-box{background:var(--panel);border:1px solid var(--border);
+    border-top-color:var(--border-hi);border-left-color:var(--border-hi);
+    padding:18px 24px;text-align:center;}
+  .version-popup-box .v-label{color:var(--dim);font-size:11px;letter-spacing:1px;margin-bottom:6px;}
+  .version-popup-box .v-value{color:var(--bright);font-size:18px;letter-spacing:2px;}
   .cursor{display:inline-block;width:7px;height:13px;background:var(--bright);
     margin-left:2px;animation:blink 1.1s steps(1) infinite;vertical-align:-2px;}
   @keyframes blink{0%,49%{opacity:1;}50%,100%{opacity:0;}}
@@ -131,7 +138,7 @@
 <body>
 <div id="app">
 
-  <div class="titlebar"><button class="title-link" id="titleLinkBtn">very berry video&#x1F353;&#x1FAD0;</button><span class="cursor"></span></div>
+  <div class="titlebar"><button class="title-link" id="titleLinkBtn">very berry video</button><button class="title-link" id="titleEmojiBtn">&#x1F353;&#x1FAD0;</button><span class="cursor"></span></div>
 
   <div class="section">
     <div class="section-header"><b>&gt;&gt; CLIPS</b></div>
@@ -216,8 +223,28 @@
   let audioCtx = null;
   let activePreviewEl = null;
 
+  const BUILD_STAMP_JST = '2026 0712 0214'; // updated by hand each time this file is regenerated
+
   document.getElementById('titleLinkBtn').addEventListener('click', ()=>{
     window.open('https://github.com/68berry/video/', '_blank');
+  });
+  document.getElementById('titleEmojiBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const backdrop = document.createElement('div');
+    backdrop.className = 'version-popup-backdrop';
+    const box = document.createElement('div');
+    box.className = 'version-popup-box';
+    const label = document.createElement('div');
+    label.className = 'v-label';
+    label.textContent = 'BUILD (JST)';
+    const value = document.createElement('div');
+    value.className = 'v-value';
+    value.textContent = BUILD_STAMP_JST;
+    box.append(label, value);
+    backdrop.append(box);
+    backdrop.addEventListener('click', ()=> backdrop.remove());
+    box.addEventListener('click', (ev)=> ev.stopPropagation());
+    document.body.appendChild(backdrop);
   });
 
   function setActivePreview(itemEl, videoEl){
@@ -246,6 +273,46 @@
     const s = Math.floor(t%60);
     const cs = Math.floor((t*100)%100);
     return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+'.'+String(cs).padStart(2,'0');
+  }
+
+  // Parses "mm:ss.cc", "mm:ss", or a plain seconds number back into total seconds.
+  function parseTime(str){
+    str = String(str).trim();
+    if(str.includes(':')){
+      const parts = str.split(':');
+      const m = parseFloat(parts[0]) || 0;
+      const s = parseFloat(parts[1]) || 0;
+      return m*60 + s;
+    }
+    const v = parseFloat(str);
+    return isNaN(v) ? 0 : v;
+  }
+
+  // Turns a span showing fmt(value) into a tap-to-edit mm:ss.cc field.
+  function makeEditableTime(spanEl, getVal, setVal, maxVal){
+    spanEl.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.inputMode = 'decimal';
+      input.className = 'seq-confirm-time-input';
+      input.value = fmt(getVal());
+      spanEl.replaceWith(input);
+      input.focus();
+      input.select();
+      function commit(){
+        let v = parseTime(input.value);
+        if(isNaN(v)) v = getVal();
+        v = Math.max(0, Math.min(maxVal, v));
+        setVal(v);
+        input.replaceWith(spanEl);
+      }
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (ev)=>{
+        if(ev.key === 'Enter'){ ev.preventDefault(); commit(); }
+        if(ev.key === 'Escape'){ input.value = fmt(getVal()); commit(); }
+      });
+    });
   }
 
   addFileBtn.addEventListener('click', ()=> fileInput.click());
@@ -317,37 +384,27 @@
     const inRow = document.createElement('div');
     inRow.className = 'trim-row';
     const inLabel = document.createElement('label'); inLabel.textContent = 'IN';
-    const inRange = document.createElement('input');
-    inRange.type = 'range'; inRange.min = 0; inRange.max = clip.duration; inRange.step = 0.01; inRange.value = 0;
-    const inSpan = document.createElement('span'); inSpan.textContent = fmt(0);
-    inRow.append(inLabel, inRange, inSpan);
+    const inSpan = document.createElement('span'); inSpan.className = 'seq-confirm-time'; inSpan.textContent = fmt(0);
+    inRow.append(inLabel, inSpan);
 
     const outRow = document.createElement('div');
     outRow.className = 'trim-row';
     const outLabel = document.createElement('label'); outLabel.textContent = 'OUT';
-    const outRange = document.createElement('input');
-    outRange.type = 'range'; outRange.min = 0; outRange.max = clip.duration; outRange.step = 0.01; outRange.value = clip.duration;
-    const outSpan = document.createElement('span'); outSpan.textContent = fmt(clip.duration);
-    outRow.append(outLabel, outRange, outSpan);
+    const outSpan = document.createElement('span'); outSpan.className = 'seq-confirm-time'; outSpan.textContent = fmt(clip.duration);
+    outRow.append(outLabel, outSpan);
 
-    inRange.addEventListener('input', ()=>{
-      let v = parseFloat(inRange.value);
-      if(v >= parseFloat(outRange.value)) v = parseFloat(outRange.value) - 0.05;
-      if(v < 0) v = 0;
-      inRange.value = v;
+    makeEditableTime(inSpan, ()=>clip.inPoint, (v)=>{
+      if(v >= clip.outPoint) v = Math.max(0, clip.outPoint - 0.05);
       clip.inPoint = v;
       inSpan.textContent = fmt(v);
       preview.currentTime = v;
-    });
-    outRange.addEventListener('input', ()=>{
-      let v = parseFloat(outRange.value);
-      if(v <= parseFloat(inRange.value)) v = parseFloat(inRange.value) + 0.05;
-      if(v > clip.duration) v = clip.duration;
-      outRange.value = v;
+    }, clip.duration);
+    makeEditableTime(outSpan, ()=>clip.outPoint, (v)=>{
+      if(v <= clip.inPoint) v = Math.min(clip.duration, clip.inPoint + 0.05);
       clip.outPoint = v;
       outSpan.textContent = fmt(v);
       preview.currentTime = v;
-    });
+    }, clip.duration);
 
     const markRow = document.createElement('div');
     markRow.className = 'mark-row';
@@ -361,14 +418,12 @@
       let v = preview.currentTime;
       if(v >= clip.outPoint) v = Math.max(0, clip.outPoint - 0.05);
       clip.inPoint = v;
-      inRange.value = v;
       inSpan.textContent = fmt(v);
     });
     markOutBtn.addEventListener('click', ()=>{
       let v = preview.currentTime;
       if(v <= clip.inPoint) v = Math.min(clip.duration, clip.inPoint + 0.05);
       clip.outPoint = v;
-      outRange.value = v;
       outSpan.textContent = fmt(v);
     });
     markRow.append(markInBtn, markOutBtn);
@@ -429,77 +484,46 @@
     const inRow = document.createElement('div');
     inRow.className = 'seq-confirm-row';
     const inLabel = document.createElement('label'); inLabel.textContent = 'IN';
-    const inRange = document.createElement('input');
-    inRange.type = 'range'; inRange.min = 0; inRange.max = clip.duration; inRange.step = 0.01; inRange.value = workingIn;
     const inTime = document.createElement('span');
     inTime.className = 'seq-confirm-time';
     inTime.textContent = fmt(workingIn);
-    inRow.append(inLabel, inRange, inTime);
+    inRow.append(inLabel, inTime);
 
     const outRow = document.createElement('div');
     outRow.className = 'seq-confirm-row';
     const outLabel = document.createElement('label'); outLabel.textContent = 'OUT';
-    const outRange = document.createElement('input');
-    outRange.type = 'range'; outRange.min = 0; outRange.max = clip.duration; outRange.step = 0.01; outRange.value = workingOut;
     const outTime = document.createElement('span');
     outTime.className = 'seq-confirm-time';
     outTime.textContent = fmt(workingOut);
-    outRow.append(outLabel, outRange, outTime);
+    outRow.append(outLabel, outTime);
 
-    editBar.append(inRow, outRow);
-
-    function updateInDisplay(){ inRange.value = workingIn; inTime.textContent = fmt(workingIn); }
-    function updateOutDisplay(){ outRange.value = workingOut; outTime.textContent = fmt(workingOut); }
-
-    inRange.addEventListener('input', ()=>{
-      let v = parseFloat(inRange.value);
+    const markRow2 = document.createElement('div');
+    markRow2.className = 'mark-row';
+    const markInBtn2 = document.createElement('button');
+    markInBtn2.className = 'btn'; markInBtn2.textContent = 'IN ← 再生位置';
+    const markOutBtn2 = document.createElement('button');
+    markOutBtn2.className = 'btn'; markOutBtn2.textContent = 'OUT ← 再生位置';
+    markInBtn2.addEventListener('click', ()=>{
+      let v = vid.currentTime;
       if(v >= workingOut) v = Math.max(0, workingOut - 0.05);
-      workingIn = v;
-      inTime.textContent = fmt(v);
-      vid.pause();
-      vid.currentTime = v;
+      workingIn = v; inTime.textContent = fmt(v);
     });
-    outRange.addEventListener('input', ()=>{
-      let v = parseFloat(outRange.value);
+    markOutBtn2.addEventListener('click', ()=>{
+      let v = vid.currentTime;
       if(v <= workingIn) v = Math.min(clip.duration, workingIn + 0.05);
-      workingOut = v;
-      outTime.textContent = fmt(v);
-      vid.pause();
-      vid.currentTime = v;
+      workingOut = v; outTime.textContent = fmt(v);
     });
+    markRow2.append(markInBtn2, markOutBtn2);
 
-    function makeEditable(spanEl, getVal, setVal, maxVal){
-      spanEl.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.inputMode = 'decimal';
-        input.className = 'seq-confirm-time-input';
-        input.value = getVal().toFixed(2);
-        spanEl.replaceWith(input);
-        input.focus();
-        input.select();
-        function commit(){
-          let v = parseFloat(input.value);
-          if(isNaN(v)) v = getVal();
-          v = Math.max(0, Math.min(maxVal, v));
-          setVal(v);
-          input.replaceWith(spanEl);
-        }
-        input.addEventListener('blur', commit);
-        input.addEventListener('keydown', (ev)=>{
-          if(ev.key === 'Enter'){ ev.preventDefault(); commit(); }
-          if(ev.key === 'Escape'){ input.value = getVal().toFixed(2); commit(); }
-        });
-      });
-    }
-    makeEditable(inTime, ()=>workingIn, (v)=>{
+    editBar.append(inRow, outRow, markRow2);
+
+    makeEditableTime(inTime, ()=>workingIn, (v)=>{
       if(v >= workingOut) v = Math.max(0, workingOut - 0.05);
-      workingIn = v; updateInDisplay(); vid.pause(); vid.currentTime = v;
+      workingIn = v; inTime.textContent = fmt(v); vid.pause(); vid.currentTime = v;
     }, clip.duration);
-    makeEditable(outTime, ()=>workingOut, (v)=>{
+    makeEditableTime(outTime, ()=>workingOut, (v)=>{
       if(v <= workingIn) v = Math.min(clip.duration, workingIn + 0.05);
-      workingOut = v; updateOutDisplay(); vid.pause(); vid.currentTime = v;
+      workingOut = v; outTime.textContent = fmt(v); vid.pause(); vid.currentTime = v;
     }, clip.duration);
 
     function loopHandler(){
