@@ -775,6 +775,18 @@
       const seqItem = sequence[i];
       const clip = clips.find(c=>c.id===seqItem.clipId);
       statusLine.textContent = 'レンダリング中... ('+(i+1)+'/'+sequence.length+') '+seqItem.name;
+
+      // Warm up the NEXT clip's seek/decode in the background while this one plays,
+      // so the cut point doesn't stall on seek latency (this stall was the cause of
+      // cuts landing later than the specified IN/OUT time).
+      const nextSeqItem = sequence[i+1];
+      if(nextSeqItem){
+        const nextClip = clips.find(c=>c.id===nextSeqItem.clipId);
+        if(nextClip && nextClip.id !== clip.id){
+          seekTo(nextClip.videoEl, nextSeqItem.inPoint).catch(()=>{});
+        }
+      }
+
       await playClip(seqItem, clip, cw, ch);
       elapsed += (seqItem.outPoint - seqItem.inPoint);
       progressBar.style.width = Math.min(100, (elapsed/totalDur)*100) + '%';
