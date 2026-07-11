@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CLIP_STUDIO</title>
+<style>
+  :root{
+    --bg:#141414;
+    --panel:#1c1c1c;
+    --border:#3a3a3a;
+    --border-lo:#050505;
+    --border-hi:#4d4d4d;
+    --text:#dcdcdc;
+    --dim:#7a7a7a;
+    --bright:#f2f2f2;
+    --danger:#9a9a9a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:"SF Mono","Menlo","Consolas","Courier New",monospace;
+    font-size:13px;line-height:1.4;-webkit-font-smoothing:none;}
+  #app{max-width:640px;margin:0 auto;padding:10px 10px 40px;}
+
+  .titlebar{display:flex;align-items:center;justify-content:space-between;
+    padding:8px 10px;background:var(--panel);
+    border:1px solid var(--border);
+    border-top-color:var(--border-hi);border-left-color:var(--border-hi);
+    border-bottom-color:var(--border-lo);border-right-color:var(--border-lo);
+    margin-bottom:10px;letter-spacing:1px;}
+  .titlebar b{color:var(--bright);font-weight:normal;}
+  .cursor{display:inline-block;width:7px;height:13px;background:var(--bright);
+    margin-left:2px;animation:blink 1.1s steps(1) infinite;vertical-align:-2px;}
+  @keyframes blink{0%,49%{opacity:1;}50%,100%{opacity:0;}}
+
+  .section{background:var(--panel);border:1px solid var(--border);
+    margin-bottom:10px;padding:10px;}
+  .section-header{color:var(--dim);letter-spacing:1px;margin-bottom:8px;
+    border-bottom:1px dashed var(--border);padding-bottom:6px;}
+  .section-header b{color:var(--bright);font-weight:normal;}
+
+  .btn{
+    display:inline-block;background:var(--panel);color:var(--text);
+    border:1px solid var(--border-lo);
+    border-top-color:var(--border-hi);border-left-color:var(--border-hi);
+    padding:8px 12px;font-family:inherit;font-size:12px;letter-spacing:.5px;
+    cursor:pointer;text-align:center;user-select:none;text-decoration:none;
+  }
+  .btn:active{border-color:var(--border-lo) !important;
+    border-bottom-color:var(--border-hi) !important;border-right-color:var(--border-hi) !important;
+    padding:9px 11px 7px 13px;}
+  .btn.btn-dim{color:var(--dim);}
+  .btn.btn-block{display:block;width:100%;margin-top:6px;}
+  .btn-disabled{opacity:.35;pointer-events:none;}
+  #fileInput{display:none;}
+
+  .clip-item{border:1px solid var(--border);padding:8px;margin-bottom:8px;background:#181818;}
+  .clip-item video.clip-preview{width:100%;max-height:160px;background:#000;display:block;margin-bottom:6px;}
+  .clip-name{color:var(--bright);margin-bottom:6px;word-break:break-all;}
+  .trim-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+  .trim-row label{width:34px;color:var(--dim);flex-shrink:0;}
+  .trim-row input[type=range]{flex:1;accent-color:#9a9a9a;}
+  .trim-row span{width:52px;text-align:right;color:var(--dim);flex-shrink:0;}
+  .clip-actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+  .mark-row{display:flex;gap:6px;margin-bottom:6px;}
+  .mark-row .btn{flex:1;padding:6px 4px;font-size:11px;}
+  .audio-btn{min-width:74px;}
+  .audio-btn.is-off{color:var(--dim);text-decoration:line-through;}
+  .seq-audio-btn{min-width:44px;}
+  .seq-audio-btn.is-off{color:var(--dim);}
+
+  .seq-item{display:flex;align-items:center;gap:6px;border-bottom:1px dashed var(--border);
+    padding:6px 0;}
+  .seq-item:last-child{border-bottom:none;}
+  .seq-idx{color:var(--dim);width:18px;flex-shrink:0;}
+  .seq-info{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .seq-info .name{color:var(--bright);}
+  .seq-info .range{color:var(--dim);margin-left:6px;}
+  .seq-btns{display:flex;gap:3px;flex-shrink:0;}
+  .seq-btns .btn{padding:4px 7px;font-size:11px;}
+  .seq-total{margin-top:8px;color:var(--dim);border-top:1px dashed var(--border);padding-top:6px;}
+  .seq-total b{color:var(--bright);font-weight:normal;}
+  .empty-msg{color:var(--dim);padding:6px 0;}
+
+  select{background:var(--panel);color:var(--text);border:1px solid var(--border);
+    font-family:inherit;padding:6px;width:100%;margin-bottom:8px;}
+  label.field-label{color:var(--dim);display:block;margin-bottom:4px;}
+
+  #progressWrap{height:14px;border:1px solid var(--border);background:#0f0f0f;
+    margin:8px 0;display:none;}
+  #progressBar{height:100%;background:var(--bright);width:0%;transition:width .15s linear;}
+  #statusLine{color:var(--dim);margin-top:4px;min-height:16px;}
+
+  canvas{display:none;}
+  #outputVideo{width:100%;background:#000;display:none;margin-top:8px;}
+  #downloadLink{display:none;margin-top:6px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="titlebar"><b>&gt;&gt; CLIP_STUDIO</b><span class="cursor"></span></div>
+
+  <div class="section">
+    <div class="section-header"><b>&gt;&gt; CLIPS</b></div>
+    <input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov" multiple>
+    <button class="btn btn-block" id="addFileBtn">+ ADD VIDEO FILE(S) (.mp4 / .mov)</button>
+    <div id="clipList" style="margin-top:8px;"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><b>&gt;&gt; SEQUENCE</b></div>
+    <div id="seqList"><div class="empty-msg">-- EMPTY --</div></div>
+    <div class="seq-total">TOTAL: <b id="seqTotal">00:00</b></div>
+  </div>
+
+  <div class="section">
+    <div class="section-header"><b>&gt;&gt; OUTPUT</b></div>
+    <label class="field-label">RESOLUTION (4K非対応 / 1080p以下)</label>
+    <select id="resSelect">
+      <option value="1920x1080">1080p — 1920x1080</option>
+      <option value="1280x720" selected>720p — 1280x720</option>
+      <option value="960x540">540p — 960x540</option>
+    </select>
+    <button class="btn btn-block" id="renderBtn">RENDER</button>
+    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div id="statusLine"></div>
+    <canvas id="canvas" width="1280" height="720"></canvas>
+    <video id="outputVideo" controls playsinline></video>
+    <a class="btn btn-block" id="downloadLink" download="clip_studio_output.mp4">&#8595; DOWNLOAD</a>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const fileInput = document.getElementById('fileInput');
+  const addFileBtn = document.getElementById('addFileBtn');
+  const clipList = document.getElementById('clipList');
+  const seqList = document.getElementById('seqList');
+  const seqTotalEl = document.getElementById('seqTotal');
+  const renderBtn = document.getElementById('renderBtn');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar = document.getElementById('progressBar');
+  const statusLine = document.getElementById('statusLine');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const outputVideo = document.getElementById('outputVideo');
+  const downloadLink = document.getElementById('downloadLink');
+  const resSelect = document.getElementById('resSelect');
+
+  let clips = [];   // {id, file, url, videoEl, duration, inPoint, outPoint, gainNode, sourceNode}
+  let sequence = []; // {clipId, inPoint, outPoint, name}
+  let clipCounter = 0;
+  let audioCtx = null;
+
+  function fmt(t){
+    if(!isFinite(t)) t = 0;
+    const m = Math.floor(t/60);
+    const s = Math.floor(t%60);
+    const cs = Math.floor((t*100)%100);
+    return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+'.'+String(cs).padStart(2,'0');
+  }
+
+  addFileBtn.addEventListener('click', ()=> fileInput.click());
+  fileInput.addEventListener('change', (e)=>{
+    Array.from(e.target.files).forEach(addClip);
+    fileInput.value = '';
+  });
+
+  function addClip(file){
+    const id = 'c'+(clipCounter++);
+    const url = URL.createObjectURL(file);
+    const videoEl = document.createElement('video');
+    videoEl.src = url;
+    videoEl.preload = 'metadata';
+    videoEl.muted = true; // audio routed separately via Web Audio at render time
+    videoEl.playsInline = true;
+
+    const clip = {id, file, url, videoEl, duration:0, inPoint:0, outPoint:0, audioOn:true, gainNode:null, sourceNode:null};
+    clips.push(clip);
+
+    videoEl.addEventListener('loadedmetadata', ()=>{
+      clip.duration = videoEl.duration;
+      clip.outPoint = videoEl.duration;
+      renderClipItem(clip);
+    });
+  }
+
+  function renderClipItem(clip){
+    const item = document.createElement('div');
+    item.className = 'clip-item';
+    item.dataset.id = clip.id;
+
+    const preview = document.createElement('video');
+    preview.className = 'clip-preview';
+    preview.src = clip.url;
+    preview.muted = true;
+    preview.playsInline = true;
+    preview.controls = true;
+
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'clip-name';
+    nameDiv.textContent = clip.file.name + '  ('+fmt(clip.duration)+')';
+
+    const inRow = document.createElement('div');
+    inRow.className = 'trim-row';
+    const inLabel = document.createElement('label'); inLabel.textContent = 'IN';
+    const inRange = document.createElement('input');
+    inRange.type = 'range'; inRange.min = 0; inRange.max = clip.duration; inRange.step = 0.01; inRange.value = 0;
+    const inSpan = document.createElement('span'); inSpan.textContent = fmt(0);
+    inRow.append(inLabel, inRange, inSpan);
+
+    const outRow = document.createElement('div');
+    outRow.className = 'trim-row';
+    const outLabel = document.createElement('label'); outLabel.textContent = 'OUT';
+    const outRange = document.createElement('input');
+    outRange.type = 'range'; outRange.min = 0; outRange.max = clip.duration; outRange.step = 0.01; outRange.value = clip.duration;
+    const outSpan = document.createElement('span'); outSpan.textContent = fmt(clip.duration);
+    outRow.append(outLabel, outRange, outSpan);
+
+    inRange.addEventListener('input', ()=>{
+      let v = parseFloat(inRange.value);
+      if(v >= parseFloat(outRange.value)) v = parseFloat(outRange.value) - 0.05;
+      if(v < 0) v = 0;
+      inRange.value = v;
+      clip.inPoint = v;
+      inSpan.textContent = fmt(v);
+      preview.currentTime = v;
+    });
+    outRange.addEventListener('input', ()=>{
+      let v = parseFloat(outRange.value);
+      if(v <= parseFloat(inRange.value)) v = parseFloat(inRange.value) + 0.05;
+      if(v > clip.duration) v = clip.duration;
+      outRange.value = v;
+      clip.outPoint = v;
+      outSpan.textContent = fmt(v);
+      preview.currentTime = v;
+    });
+
+    const markRow = document.createElement('div');
+    markRow.className = 'mark-row';
+    const markInBtn = document.createElement('button');
+    markInBtn.className = 'btn';
+    markInBtn.textContent = 'IN ← 再生位置';
+    const markOutBtn = document.createElement('button');
+    markOutBtn.className = 'btn';
+    markOutBtn.textContent = 'OUT ← 再生位置';
+    markInBtn.addEventListener('click', ()=>{
+      let v = preview.currentTime;
+      if(v >= clip.outPoint) v = Math.max(0, clip.outPoint - 0.05);
+      clip.inPoint = v;
+      inRange.value = v;
+      inSpan.textContent = fmt(v);
+    });
+    markOutBtn.addEventListener('click', ()=>{
+      let v = preview.currentTime;
+      if(v <= clip.inPoint) v = Math.min(clip.duration, clip.inPoint + 0.05);
+      clip.outPoint = v;
+      outRange.value = v;
+      outSpan.textContent = fmt(v);
+    });
+    markRow.append(markInBtn, markOutBtn);
+
+    const actions = document.createElement('div');
+    actions.className = 'clip-actions';
+
+    const audioBtn = document.createElement('button');
+    audioBtn.className = 'btn audio-btn';
+    audioBtn.textContent = '♪ 音声 ON';
+    audioBtn.addEventListener('click', ()=>{
+      clip.audioOn = !clip.audioOn;
+      audioBtn.textContent = clip.audioOn ? '♪ 音声 ON' : '♪ 音声 OFF';
+      audioBtn.classList.toggle('is-off', !clip.audioOn);
+    });
+
+    const addSeqBtn = document.createElement('button');
+    addSeqBtn.className = 'btn';
+    addSeqBtn.textContent = '+ ADD TO SEQUENCE';
+    addSeqBtn.addEventListener('click', ()=>{
+      sequence.push({
+        clipId: clip.id,
+        inPoint: clip.inPoint,
+        outPoint: clip.outPoint,
+        audioOn: clip.audioOn,
+        name: clip.file.name
+      });
+      renderSequence();
+    });
+    actions.append(audioBtn, addSeqBtn);
+
+    item.append(preview, nameDiv, markRow, inRow, outRow, actions);
+    clipList.appendChild(item);
+  }
+
+  function renderSequence(){
+    seqList.innerHTML = '';
+    if(sequence.length === 0){
+      seqList.innerHTML = '<div class="empty-msg">-- EMPTY --</div>';
+    } else {
+      sequence.forEach((seqItem, idx)=>{
+        const row = document.createElement('div');
+        row.className = 'seq-item';
+
+        const idxEl = document.createElement('div');
+        idxEl.className = 'seq-idx';
+        idxEl.textContent = (idx+1)+'.';
+
+        const info = document.createElement('div');
+        info.className = 'seq-info';
+        const dur = seqItem.outPoint - seqItem.inPoint;
+        info.innerHTML = '<span class="name">'+seqItem.name+'</span><span class="range">'
+          + fmt(seqItem.inPoint)+'→'+fmt(seqItem.outPoint)+' ('+fmt(dur)+')</span>';
+
+        const btns = document.createElement('div');
+        btns.className = 'seq-btns';
+        const audioBtn = document.createElement('button');
+        audioBtn.className = 'btn seq-audio-btn' + (seqItem.audioOn ? '' : ' is-off');
+        audioBtn.textContent = seqItem.audioOn ? '♪' : '♪✕';
+        audioBtn.title = '音声 ON/OFF';
+        const upBtn = document.createElement('button'); upBtn.className='btn'; upBtn.textContent='↑';
+        const downBtn = document.createElement('button'); downBtn.className='btn'; downBtn.textContent='↓';
+        const rmBtn = document.createElement('button'); rmBtn.className='btn'; rmBtn.textContent='✕';
+        audioBtn.addEventListener('click', ()=>{
+          seqItem.audioOn = !seqItem.audioOn;
+          renderSequence();
+        });
+        upBtn.addEventListener('click', ()=>{
+          if(idx>0){ [sequence[idx-1],sequence[idx]] = [sequence[idx],sequence[idx-1]]; renderSequence(); }
+        });
+        downBtn.addEventListener('click', ()=>{
+          if(idx<sequence.length-1){ [sequence[idx+1],sequence[idx]] = [sequence[idx],sequence[idx+1]]; renderSequence(); }
+        });
+        rmBtn.addEventListener('click', ()=>{
+          sequence.splice(idx,1); renderSequence();
+        });
+        btns.append(audioBtn, upBtn, downBtn, rmBtn);
+
+        row.append(idxEl, info, btns);
+        seqList.appendChild(row);
+      });
+    }
+
+    const total = sequence.reduce((sum,s)=> sum + (s.outPoint - s.inPoint), 0);
+    seqTotalEl.textContent = fmt(total);
+  }
+
+  function ensureAudioSetup(clip){
+    if(!clip.sourceNode){
+      clip.sourceNode = audioCtx.createMediaElementSource(clip.videoEl);
+      clip.gainNode = audioCtx.createGain();
+      clip.gainNode.gain.value = 0;
+      clip.sourceNode.connect(clip.gainNode);
+      clip.gainNode.connect(audioCtx.destination);
+      if(window.__csDest){
+        clip.gainNode.connect(window.__csDest);
+      }
+    }
+  }
+
+  function drawFrame(v, cw, ch){
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,cw,ch);
+    const vw = v.videoWidth, vh = v.videoHeight;
+    if(!vw || !vh) return;
+    const scale = Math.min(cw/vw, ch/vh);
+    const dw = vw*scale, dh = vh*scale;
+    const dx = (cw-dw)/2, dy = (ch-dh)/2;
+    ctx.drawImage(v, dx, dy, dw, dh);
+  }
+
+  function playClip(seqItem, clip, cw, ch){
+    return new Promise((resolve)=>{
+      const v = clip.videoEl;
+      let rafId;
+      function onSeeked(){
+        v.removeEventListener('seeked', onSeeked);
+        clip.gainNode.gain.value = seqItem.audioOn ? 1 : 0;
+        v.play().catch(()=>{});
+        rafId = requestAnimationFrame(loop);
+      }
+      function loop(){
+        drawFrame(v, cw, ch);
+        if(v.currentTime >= seqItem.outPoint - 0.03 || v.ended || v.paused){
+          v.pause();
+          clip.gainNode.gain.value = 0;
+          cancelAnimationFrame(rafId);
+          resolve();
+          return;
+        }
+        rafId = requestAnimationFrame(loop);
+      }
+      v.pause();
+      v.currentTime = seqItem.inPoint;
+      v.addEventListener('seeked', onSeeked);
+    });
+  }
+
+  renderBtn.addEventListener('click', async ()=>{
+    if(sequence.length === 0){
+      statusLine.textContent = 'シーケンスが空です。クリップを追加してください。';
+      return;
+    }
+    renderBtn.classList.add('btn-disabled');
+    progressWrap.style.display = 'block';
+    progressBar.style.width = '0%';
+    outputVideo.style.display = 'none';
+    downloadLink.style.display = 'none';
+    statusLine.textContent = '準備中...';
+
+    const [cw, ch] = resSelect.value.split('x').map(Number);
+    canvas.width = cw; canvas.height = ch;
+
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if(audioCtx.state === 'suspended') await audioCtx.resume();
+
+    if(!window.__csDest){
+      window.__csDest = audioCtx.createMediaStreamDestination();
+    }
+
+    // ensure audio graph exists for every clip used in sequence
+    sequence.forEach(seqItem=>{
+      const clip = clips.find(c=>c.id===seqItem.clipId);
+      ensureAudioSetup(clip);
+    });
+
+    const canvasStream = canvas.captureStream(30);
+    const combined = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...window.__csDest.stream.getAudioTracks()
+    ]);
+
+    const mp4Candidates = [
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4;codecs=h264,aac',
+      'video/mp4'
+    ];
+    const webmCandidates = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm'
+    ];
+    let mimeType = mp4Candidates.find(t => MediaRecorder.isTypeSupported(t));
+    let usingMp4 = !!mimeType;
+    if(!mimeType) mimeType = webmCandidates.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+    const fileExt = usingMp4 ? 'mp4' : 'webm';
+    if(!usingMp4){
+      statusLine.textContent = 'この端末/ブラウザはMP4録画に非対応のため、.webmで書き出します。';
+    }
+
+    const recorder = new MediaRecorder(combined, {mimeType});
+    const chunks = [];
+    recorder.ondataavailable = (e)=>{ if(e.data.size>0) chunks.push(e.data); };
+
+    const totalDur = sequence.reduce((s,i)=> s + (i.outPoint-i.inPoint), 0);
+    let elapsed = 0;
+
+    const done = new Promise(resolve=>{ recorder.onstop = resolve; });
+    recorder.start();
+
+    for(let i=0;i<sequence.length;i++){
+      const seqItem = sequence[i];
+      const clip = clips.find(c=>c.id===seqItem.clipId);
+      statusLine.textContent = 'レンダリング中... ('+(i+1)+'/'+sequence.length+') '+seqItem.name;
+      await playClip(seqItem, clip, cw, ch);
+      elapsed += (seqItem.outPoint - seqItem.inPoint);
+      progressBar.style.width = Math.min(100, (elapsed/totalDur)*100) + '%';
+    }
+
+    recorder.stop();
+    await done;
+
+    const blob = new Blob(chunks, {type: usingMp4 ? 'video/mp4' : 'video/webm'});
+    const url = URL.createObjectURL(blob);
+    outputVideo.src = url;
+    outputVideo.style.display = 'block';
+    downloadLink.href = url;
+    downloadLink.download = 'clip_studio_output.' + fileExt;
+    downloadLink.textContent = '↓ DOWNLOAD .' + fileExt;
+    downloadLink.style.display = 'block';
+    statusLine.textContent = '完了 (.' + fileExt + ')。書き出しサイズ: ' + (blob.size/1024/1024).toFixed(1) + ' MB';
+    renderBtn.classList.remove('btn-disabled');
+  });
+
+  renderSequence();
+})();
+</script>
+</body>
+</html>
