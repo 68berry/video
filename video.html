@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>CLIP_STUDIO</title>
+<title>very berry video editer</title>
 <style>
   :root{
     --bg:#141414;
@@ -102,6 +102,7 @@
   canvas{display:none;}
   #outputVideo{width:100%;background:#000;display:none;margin-top:8px;}
   #downloadLink{display:none;margin-top:6px;}
+  #shareBtn{display:none;margin-top:6px;}
 </style>
 </head>
 <body>
@@ -141,6 +142,7 @@
     <canvas id="canvas" width="1280" height="720"></canvas>
     <video id="outputVideo" controls playsinline></video>
     <a class="btn btn-block" id="downloadLink" download="clip_studio_output.mp4">&#8595; DOWNLOAD</a>
+    <button class="btn btn-block" id="shareBtn">&#128228; 共有 → 動画を保存</button>
   </div>
 
 </div>
@@ -160,6 +162,17 @@
   const ctx = canvas.getContext('2d');
   const outputVideo = document.getElementById('outputVideo');
   const downloadLink = document.getElementById('downloadLink');
+  const shareBtn = document.getElementById('shareBtn');
+
+  function timestampName(){
+    const d = new Date();
+    const yy = String(d.getFullYear()%100).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mi = String(d.getMinutes()).padStart(2,'0');
+    return yy+mm+dd+'-'+hh+mi;
+  }
   const resChoiceRow = document.getElementById('resChoiceRow');
   const fpsChoiceRow = document.getElementById('fpsChoiceRow');
   let selectedRes = '1920x1080';
@@ -260,14 +273,24 @@
     const fpsRow = document.createElement('div');
     fpsRow.className = 'trim-row';
     const fpsLabel = document.createElement('label'); fpsLabel.textContent = 'FPS';
-    const fpsSel = document.createElement('select');
-    fpsSel.innerHTML = '<option value="30" selected>30fps</option><option value="24">24fps</option><option value="23.976">23.976fps (23)</option>';
-    fpsSel.style.flex = '1';
-    fpsSel.addEventListener('change', ()=>{
-      clip.fps = parseFloat(fpsSel.value);
-      preview.__fps = clip.fps;
+    const fpsBtnWrap = document.createElement('div');
+    fpsBtnWrap.className = 'choice-row';
+    fpsBtnWrap.style.flex = '1';
+    fpsBtnWrap.style.marginBottom = '0';
+    [['30','30fps'],['24','24fps'],['23.976','23.976fps']].forEach(([val,label])=>{
+      const b = document.createElement('button');
+      b.className = 'btn choice-btn' + (val==='30' ? ' is-selected' : '');
+      b.textContent = label;
+      b.dataset.value = val;
+      b.addEventListener('click', ()=>{
+        fpsBtnWrap.querySelectorAll('.choice-btn').forEach(x=> x.classList.remove('is-selected'));
+        b.classList.add('is-selected');
+        clip.fps = parseFloat(val);
+        preview.__fps = clip.fps;
+      });
+      fpsBtnWrap.appendChild(b);
     });
-    fpsRow.append(fpsLabel, fpsSel);
+    fpsRow.append(fpsLabel, fpsBtnWrap);
     preview.__fps = clip.fps;
 
     const inRow = document.createElement('div');
@@ -541,14 +564,31 @@
 
     const blob = new Blob(chunks, {type: usingMp4 ? 'video/mp4' : 'video/webm'});
     const url = URL.createObjectURL(blob);
+    const outName = timestampName() + '.' + fileExt;
     outputVideo.src = url;
     outputVideo.style.display = 'block';
     downloadLink.href = url;
-    downloadLink.download = 'clip_studio_output.' + fileExt;
+    downloadLink.download = outName;
     downloadLink.textContent = '↓ DOWNLOAD .' + fileExt;
     downloadLink.style.display = 'block';
-    statusLine.textContent = '完了 (.' + fileExt + ')。書き出しサイズ: ' + (blob.size/1024/1024).toFixed(1) + ' MB';
+    statusLine.textContent = '完了 (.' + fileExt + ' / ' + outName + ')。書き出しサイズ: ' + (blob.size/1024/1024).toFixed(1) + ' MB';
     renderBtn.classList.remove('btn-disabled');
+
+    const shareFile = new File([blob], outName, {type: usingMp4 ? 'video/mp4' : 'video/webm'});
+    if(navigator.canShare && navigator.canShare({files:[shareFile]})){
+      shareBtn.style.display = 'block';
+      shareBtn.onclick = async ()=>{
+        try{
+          await navigator.share({files:[shareFile], title: outName});
+        }catch(err){
+          if(err && err.name !== 'AbortError'){
+            statusLine.textContent = '共有に失敗しました。DOWNLOADボタンから保存してください。';
+          }
+        }
+      };
+    } else {
+      shareBtn.style.display = 'none';
+    }
   });
 
   renderSequence();
