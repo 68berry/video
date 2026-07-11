@@ -151,6 +151,22 @@
 
     <div class="estimate-line">生成予定枚数: <b id="estimateCount">0</b> 枚 (<span id="estimateDur">00:00.00</span>分)</div>
 
+    <div class="section-header" style="margin-top:10px;"><b>&gt;&gt; FILTER</b></div>
+    <div class="mark-row">
+      <button class="btn choice-btn is-selected" id="filterBlankBtn" style="flex:1;">白飛び/黒つぶれ除外: ON</button>
+    </div>
+    <div class="mark-row">
+      <button class="btn choice-btn is-selected" id="filterBlurBtn" style="flex:1;">ブレ除外: ON</button>
+    </div>
+    <div class="choice-row" id="blurStrictRow">
+      <button class="btn choice-btn" data-value="low">緩め</button>
+      <button class="btn choice-btn is-selected" data-value="mid">標準</button>
+      <button class="btn choice-btn" data-value="high">厳しめ</button>
+    </div>
+    <div class="mark-row">
+      <button class="btn choice-btn is-selected" id="filterDupBtn" style="flex:1;">重複除外: ON</button>
+    </div>
+
     <button class="btn btn-block" id="generateBtn">📸 スクリーンショット生成</button>
     <div id="progressWrap"><div id="progressBar"></div></div>
     <div id="statusLine"></div>
@@ -183,6 +199,108 @@
   const ctx = canvas.getContext('2d');
   const thumbGrid = document.getElementById('thumbGrid');
   const shareBtn = document.getElementById('shareBtn');
+  const filterBlankBtn = document.getElementById('filterBlankBtn');
+  const filterBlurBtn = document.getElementById('filterBlurBtn');
+  const blurStrictRow = document.getElementById('blurStrictRow');
+  const filterDupBtn = document.getElementById('filterDupBtn');
+
+  const filterState = { blank:true, blur:true, blurLevel:'mid', dup:true };
+
+  function wireToggle(btn, key){
+    btn.addEventListener('click', ()=>{
+      filterState[key] = !filterState[key];
+      btn.classList.toggle('is-selected', filterState[key]);
+      btn.textContent = btn.textContent.replace(/ON|OFF/, filterState[key] ? 'ON' : 'OFF');
+      if(key === 'blur') blurStrictRow.style.opacity = filterState.blur ? '1' : '.4';
+    });
+  }
+  wireToggle(filterBlankBtn, 'blank');
+  wireToggle(filterBlurBtn, 'blur');
+  wireToggle(filterDupBtn, 'dup');
+  blurStrictRow.querySelectorAll('.choice-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      blurStrictRow.querySelectorAll('.choice-btn').forEach(x=> x.classList.remove('is-selected'));
+      b.classList.add('is-selected');
+      filterState.blurLevel = b.dataset.value;
+    });
+  });
+
+  // --- Frame analysis: blank/blur detection + perceptual hash for duplicates ---
+  const ANALYZE_SIZE = 32;
+  const analysisCanvas = document.createElement('canvas');
+  analysisCanvas.width = ANALYZE_SIZE; analysisCanvas.height = ANALYZE_SIZE;
+  const analysisCtx = analysisCanvas.getContext('2d', {willReadFrequently:true});
+
+  const BLUR_THRESHOLDS = { low: 40, mid: 120, high: 300 };
+  const DUP_HAMMING_MAX = 6; // out of 64 bits
+
+  function analyzeFrame(sourceCanvas){
+    analysisCtx.drawImage(sourceCanvas, 0, 0, ANALYZE_SIZE, ANALYZE_SIZE);
+    const data = analysisCtx.getImageData(0, 0, ANALYZE_SIZE, ANALYZE_SIZE).data;
+    const n = ANALYZE_SIZE*ANALYZE_SIZE;
+    const gray = new Float32Array(n);
+    let sum = 0;
+    for(let i=0;i<n;i++){
+      const r=data[i*4], g=data[i*4+1], b=data[i*4+2];
+      const v = 0.299*r + 0.587*g + 0.114*b;
+      gray[i] = v; sum += v;
+    }
+    const mean = sum/n;
+    let varSum = 0;
+    for(let i=0;i<n;i++) varSum += (gray[i]-mean)*(gray[i]-mean);
+    const stdDev = Math.sqrt(varSum/n);
+
+    const w = ANALYZE_SIZE, h = ANALYZE_SIZE;
+    let lapSum=0, lapSumSq=0, lapCount=0;
+    for(let y=1;y<h-1;y++){
+      for(let x=1;x<w-1;x++){
+        const idx = y*w+x;
+        const lap = gray[idx-w] + gray[idx+w] + gray[idx-1] + gray[idx+1] - 4*gray[idx];
+        lapSum += lap; lapSumSq += lap*lap; lapCount++;
+      }
+    }
+    const lapMean = lapSum/lapCount;
+    const lapVar = (lapSumSq/lapCount) - (lapMean*lapMean);
+
+    // 8x8 average hash (block-average downsample of the 32x32 grayscale)
+    const block = ANALYZE_SIZE/8;
+    const blockMeans = [];
+    for(let by=0;by<8;by++){
+      for(let bx=0;bx<8;bx++){
+        let s=0, c=0;
+        for(let yy=0;yy<block;yy++) for(let xx=0;xx<block;xx++){
+          s += gray[(by*block+yy)*w + (bx*block+xx)]; c++;
+        }
+        blockMeans.push(s/c);
+      }
+    }
+    const bmMean = blockMeans.reduce((a,b)=>a+b,0)/blockMeans.length;
+    const hash = blockMeans.map(v=> v>=bmMean ? '1':'0').join('');
+
+    return {mean, stdDev, lapVar, hash};
+  }
+
+  function hammingDistance(a, b){
+    let d = 0;
+    for(let i=0;i<a.length;i++) if(a[i]!==b[i]) d++;
+    return d;
+  }
+
+  function classifyFrame(analysis, keptHashes){
+    if(filterState.blank && (analysis.mean < 12 || analysis.mean > 243) && analysis.stdDev < 10){
+      return 'blank';
+    }
+    if(filterState.blur && analysis.lapVar < BLUR_THRESHOLDS[filterState.blurLevel]){
+      return 'blur';
+    }
+    if(filterState.dup){
+      for(const h of keptHashes){
+        if(hammingDistance(h, analysis.hash) <= DUP_HAMMING_MAX) return 'dup';
+      }
+    }
+    return null;
+  }
+
 
   let clips = [];
   let clipCounter = 0;
@@ -454,6 +572,8 @@
     const baseName = timestampName();
     let idx = 0;
     let t = clip.inPoint;
+    const keptHashes = [];
+    let rejected = { blank:0, blur:0, dup:0 };
 
     activePreview.pause();
 
@@ -461,10 +581,18 @@
       statusLine.textContent = '生成中... (' + (idx+1) + '/' + count + ')';
       await seekTo(clip.videoEl, Math.min(t, clip.outPoint));
       ctx.drawImage(clip.videoEl, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+
+      const analysis = analyzeFrame(canvas);
+      const reason = classifyFrame(analysis, keptHashes);
       idx++;
-      const fname = baseName + '_f' + String(idx).padStart(4,'0') + '.png';
-      generatedFrames.push({blob, name: fname});
+      if(reason){
+        rejected[reason]++;
+      } else {
+        keptHashes.push(analysis.hash);
+        const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+        const fname = baseName + '_f' + String(String(idx).padStart(4,'0')) + '.png';
+        generatedFrames.push({blob, name: fname});
+      }
       progressBar.style.width = Math.min(100, (idx/count)*100) + '%';
       t += step;
     }
@@ -483,7 +611,8 @@
       thumbGrid.appendChild(more);
     }
 
-    statusLine.textContent = '完了。' + generatedFrames.length + '枚生成しました。';
+    const removedTotal = rejected.blank + rejected.blur + rejected.dup;
+    statusLine.textContent = '完了。' + generatedFrames.length + '枚 (元' + idx + '枚中、除外: 白黒' + rejected.blank + ' / ブレ' + rejected.blur + ' / 重複' + rejected.dup + ' 計' + removedTotal + '枚)';
     generateBtn.classList.remove('btn-disabled');
 
     const shareFiles = generatedFrames.map(f => new File([f.blob], f.name, {type:'image/png'}));
