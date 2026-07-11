@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>very berry snap editer</title>
+<style>
+  :root{
+    --bg:#141414;
+    --panel:#1c1c1c;
+    --border:#3a3a3a;
+    --border-lo:#050505;
+    --border-hi:#4d4d4d;
+    --text:#dcdcdc;
+    --dim:#7a7a7a;
+    --bright:#f2f2f2;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:"SF Mono","Menlo","Consolas","Courier New",monospace;
+    font-size:13px;line-height:1.4;-webkit-font-smoothing:none;}
+  #app{max-width:640px;margin:0 auto;padding:10px 10px 40px;}
+
+  .titlebar{display:flex;align-items:center;justify-content:space-between;
+    padding:8px 10px;background:var(--panel);
+    border:1px solid var(--border);
+    border-top-color:var(--border-hi);border-left-color:var(--border-hi);
+    border-bottom-color:var(--border-lo);border-right-color:var(--border-lo);
+    margin-bottom:10px;letter-spacing:1px;}
+  .title-group{display:inline-flex;align-items:center;}
+  .title-link{background:none;border:none;margin:0;color:var(--bright);font-family:inherit;
+    font-size:13px;letter-spacing:1px;cursor:pointer;padding:0;display:inline-flex;align-items:center;}
+  .title-link:active{opacity:.7;}
+  .cursor{display:inline-block;width:7px;height:13px;background:var(--bright);
+    margin-left:2px;animation:blink 1.1s steps(1) infinite;vertical-align:-2px;}
+  @keyframes blink{0%,49%{opacity:1;}50%,100%{opacity:0;}}
+
+  .section{background:var(--panel);border:1px solid var(--border);
+    margin-bottom:10px;padding:10px;}
+  .section-header{color:var(--dim);letter-spacing:1px;margin-bottom:8px;
+    border-bottom:1px dashed var(--border);padding-bottom:6px;}
+  .section-header b{color:var(--bright);font-weight:normal;}
+
+  .btn{
+    display:inline-block;background:var(--panel);color:var(--text);
+    border:1px solid var(--border-lo);
+    border-top-color:var(--border-hi);border-left-color:var(--border-hi);
+    padding:8px 12px;font-family:inherit;font-size:12px;letter-spacing:.5px;
+    cursor:pointer;text-align:center;user-select:none;text-decoration:none;
+  }
+  .btn:active{border-color:var(--border-lo) !important;
+    border-bottom-color:var(--border-hi) !important;border-right-color:var(--border-hi) !important;
+    padding:9px 11px 7px 13px;}
+  .btn.btn-block{display:block;width:100%;margin-top:6px;}
+  .btn-disabled{opacity:.35;pointer-events:none;}
+  #fileInput{display:none;}
+
+  .clip-list-item{display:flex;align-items:center;gap:8px;border:1px solid var(--border);
+    padding:8px;margin-bottom:6px;background:#181818;cursor:pointer;}
+  .clip-list-item.is-active{border-color:var(--bright);}
+  .clip-list-item .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}
+  .clip-list-item.is-active .name{color:var(--bright);}
+  .clip-list-item .dur{color:var(--dim);flex-shrink:0;}
+  .empty-msg{color:var(--dim);padding:6px 0;}
+
+  .active-preview{width:100%;max-height:220px;background:#000;display:block;margin-bottom:8px;}
+
+  .trim-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+  .trim-row label{width:34px;color:var(--dim);flex-shrink:0;}
+  .time-picker{display:inline-flex;align-items:center;color:var(--dim);white-space:nowrap;}
+  .time-picker select{background:#181818;color:var(--bright);border:1px solid var(--border);
+    font-family:inherit;font-size:12px;padding:3px 2px;margin:0 1px;width:auto;}
+
+  .mark-row{display:flex;gap:6px;margin-bottom:8px;align-items:center;}
+  .mark-row .btn{flex:1;padding:6px 4px;font-size:11px;}
+  .mark-row .scrub-range{flex:2;accent-color:#9a9a9a;}
+
+  .choice-row{display:flex;gap:6px;margin-bottom:8px;}
+  .choice-btn{flex:1;padding:8px 4px;font-size:12px;}
+  .choice-btn.is-selected{background:var(--bright);color:#111;border-color:var(--border-lo);
+    border-top-color:var(--border-lo);border-left-color:var(--border-lo);
+    border-bottom-color:var(--border-hi);border-right-color:var(--border-hi);}
+
+  .estimate-line{color:var(--dim);margin:6px 0;}
+  .estimate-line b{color:var(--bright);font-weight:normal;}
+
+  #progressWrap{height:14px;border:1px solid var(--border);background:#0f0f0f;
+    margin:8px 0;display:none;}
+  #progressBar{height:100%;background:var(--bright);width:0%;transition:width .1s linear;}
+  #statusLine{color:var(--dim);margin-top:4px;min-height:16px;}
+
+  canvas{display:none;}
+
+  .thumb-grid{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;max-height:260px;overflow-y:auto;}
+  .thumb-grid img{width:64px;height:64px;object-fit:cover;background:#000;border:1px solid var(--border);}
+  .thumb-more{color:var(--dim);align-self:center;padding:4px 8px;}
+
+  #shareBtn{display:none;margin-top:8px;}
+
+  .warn-modal{position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.6);
+    display:flex;align-items:center;justify-content:center;}
+  .warn-box{background:var(--panel);border:1px solid var(--border);
+    border-top-color:var(--border-hi);border-left-color:var(--border-hi);
+    padding:16px;max-width:280px;text-align:center;}
+  .warn-box p{margin:0 0 14px;color:var(--text);}
+  .warn-btns{display:flex;gap:8px;}
+  .warn-btns .btn{flex:1;}
+
+  .version-popup-backdrop{position:fixed;inset:0;z-index:1200;background:rgba(0,0,0,.55);
+    display:flex;align-items:center;justify-content:center;}
+  .version-popup-box{background:var(--panel);border:1px solid var(--border);
+    border-top-color:var(--border-hi);border-left-color:var(--border-hi);
+    padding:18px 24px;text-align:center;}
+  .version-popup-box .v-label{color:var(--dim);font-size:11px;letter-spacing:1px;margin-bottom:6px;}
+  .version-popup-box .v-value{color:var(--bright);font-size:18px;letter-spacing:2px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="titlebar"><div class="title-group"><button class="title-link" id="titleLinkBtn">very berry snap</button> <button class="title-link" id="titleEmojiBtn">&#x1F353;&#x1FAD0;</button></div><span class="cursor"></span></div>
+
+  <div class="section">
+    <div class="section-header"><b>&gt;&gt; CLIPS</b></div>
+    <input type="file" id="fileInput" accept="video/mp4,video/quicktime,.mp4,.mov" multiple>
+    <button class="btn btn-block" id="addFileBtn">+ ADD VIDEO FILE(S) (.mp4 / .mov)</button>
+    <div id="clipList" style="margin-top:8px;"><div class="empty-msg">-- EMPTY --</div></div>
+  </div>
+
+  <div class="section" id="activeSection" style="display:none;">
+    <div class="section-header"><b>&gt;&gt; ACTIVE CLIP</b></div>
+    <video id="activePreview" class="active-preview" controls playsinline muted></video>
+
+    <div class="trim-row">
+      <label>FPS</label>
+      <div class="choice-row" id="fpsChoiceRow" style="margin:0;flex:1;">
+        <button class="btn choice-btn is-selected" data-value="30">30fps</button>
+        <button class="btn choice-btn" data-value="24">24fps</button>
+        <button class="btn choice-btn" data-value="23.976">23.976fps</button>
+      </div>
+    </div>
+
+    <div class="trim-row" id="inRowWrap">
+      <label>IN</label>
+    </div>
+    <div class="trim-row" id="outRowWrap">
+      <label>OUT</label>
+    </div>
+
+    <div class="mark-row" id="markRowWrap"></div>
+
+    <div class="estimate-line">生成予定枚数: <b id="estimateCount">0</b> 枚 (<span id="estimateDur">00:00.00</span>分)</div>
+
+    <button class="btn btn-block" id="generateBtn">📸 スクリーンショット生成</button>
+    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div id="statusLine"></div>
+    <canvas id="canvas"></canvas>
+
+    <div class="thumb-grid" id="thumbGrid"></div>
+    <button class="btn btn-block" id="shareBtn">&#128228; 共有 → 画像を保存</button>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const fileInput = document.getElementById('fileInput');
+  const addFileBtn = document.getElementById('addFileBtn');
+  const clipList = document.getElementById('clipList');
+  const activeSection = document.getElementById('activeSection');
+  const activePreview = document.getElementById('activePreview');
+  const fpsChoiceRow = document.getElementById('fpsChoiceRow');
+  const inRowWrap = document.getElementById('inRowWrap');
+  const outRowWrap = document.getElementById('outRowWrap');
+  const markRowWrap = document.getElementById('markRowWrap');
+  const estimateCount = document.getElementById('estimateCount');
+  const estimateDur = document.getElementById('estimateDur');
+  const generateBtn = document.getElementById('generateBtn');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar = document.getElementById('progressBar');
+  const statusLine = document.getElementById('statusLine');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const thumbGrid = document.getElementById('thumbGrid');
+  const shareBtn = document.getElementById('shareBtn');
+
+  let clips = [];
+  let clipCounter = 0;
+  let activeClip = null;
+  let generatedFrames = []; // [{blob, name}]
+
+  const BUILD_STAMP_JST = '2026 0712 0245'; // updated by hand each time this file is regenerated
+
+  document.getElementById('titleLinkBtn').addEventListener('click', ()=>{
+    window.open('https://github.com/68berry/snap/', '_blank');
+  });
+  document.getElementById('titleEmojiBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const backdrop = document.createElement('div');
+    backdrop.className = 'version-popup-backdrop';
+    const box = document.createElement('div');
+    box.className = 'version-popup-box';
+    const label = document.createElement('div'); label.className = 'v-label'; label.textContent = 'BUILD (JST)';
+    const value = document.createElement('div'); value.className = 'v-value'; value.textContent = BUILD_STAMP_JST;
+    box.append(label, value);
+    backdrop.append(box);
+    backdrop.addEventListener('click', ()=> backdrop.remove());
+    box.addEventListener('click', (ev)=> ev.stopPropagation());
+    document.body.appendChild(backdrop);
+  });
+
+  function fmt(t){
+    if(!isFinite(t)) t = 0;
+    const m = Math.floor(t/60);
+    const s = Math.floor(t%60);
+    const cs = Math.floor((t*100)%100);
+    return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+'.'+String(cs).padStart(2,'0');
+  }
+
+  function timestampName(){
+    const d = new Date();
+    const yy = String(d.getFullYear()%100).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mi = String(d.getMinutes()).padStart(2,'0');
+    return yy+mm+dd+'-'+hh+mi;
+  }
+
+  function seekTo(v, t){
+    return new Promise(resolve=>{
+      if(Math.abs(v.currentTime - t) < 0.001 && v.readyState >= 2){ resolve(); return; }
+      let settled = false;
+      function finish(){
+        if(settled) return;
+        settled = true;
+        v.removeEventListener('seeked', onSeeked);
+        clearTimeout(timer);
+        resolve();
+      }
+      function onSeeked(){ finish(); }
+      v.addEventListener('seeked', onSeeked);
+      const timer = setTimeout(finish, 2000); // safety net: never hang forever on a seek
+      v.currentTime = t;
+    });
+  }
+
+  // Builds a [mm]:[ss].[cc] dropdown time picker. Returns {el, refresh()}.
+  function createTimePicker(getVal, setVal, maxVal){
+    const wrap = document.createElement('span');
+    wrap.className = 'time-picker';
+    const maxMin = Math.max(1, Math.ceil(maxVal/60));
+    const mmSel = document.createElement('select');
+    for(let m=0;m<=maxMin;m++){ const o=document.createElement('option'); o.value=m; o.textContent=String(m).padStart(2,'0'); mmSel.appendChild(o); }
+    const ssSel = document.createElement('select');
+    for(let s=0;s<60;s++){ const o=document.createElement('option'); o.value=s; o.textContent=String(s).padStart(2,'0'); ssSel.appendChild(o); }
+    const ccSel = document.createElement('select');
+    for(let c=0;c<100;c++){ const o=document.createElement('option'); o.value=c; o.textContent=String(c).padStart(2,'0'); ccSel.appendChild(o); }
+    function refresh(){
+      const v = Math.max(0, Math.min(maxVal, getVal()));
+      const m = Math.floor(v/60);
+      const s = Math.floor(v%60);
+      const c = Math.round((v*100)%100);
+      mmSel.value = m; ssSel.value = s; ccSel.value = c;
+    }
+    function onChange(e){
+      e.stopPropagation();
+      const v = parseInt(mmSel.value,10)*60 + parseInt(ssSel.value,10) + parseInt(ccSel.value,10)/100;
+      setVal(Math.max(0, Math.min(maxVal, v)));
+      refresh();
+    }
+    mmSel.addEventListener('change', onChange);
+    ssSel.addEventListener('change', onChange);
+    ccSel.addEventListener('change', onChange);
+    refresh();
+    wrap.append('[', mmSel, ']:[', ssSel, '].[', ccSel, ']');
+    return {el: wrap, refresh};
+  }
+
+  addFileBtn.addEventListener('click', ()=> fileInput.click());
+  fileInput.addEventListener('change', (e)=>{
+    Array.from(e.target.files).forEach(addClip);
+    fileInput.value = '';
+  });
+
+  function addClip(file){
+    const id = 'c'+(clipCounter++);
+    const url = URL.createObjectURL(file);
+    const videoEl = document.createElement('video');
+    videoEl.src = url;
+    videoEl.preload = 'metadata';
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+
+    const clip = {id, file, url, videoEl, duration:0, inPoint:0, outPoint:0, fps:30, listEl:null};
+    clips.push(clip);
+
+    videoEl.addEventListener('loadedmetadata', ()=>{
+      clip.duration = videoEl.duration;
+      clip.outPoint = videoEl.duration;
+      renderClipList();
+      if(!activeClip) selectClip(clip);
+    });
+  }
+
+  function renderClipList(){
+    clipList.innerHTML = '';
+    if(clips.length === 0){
+      clipList.innerHTML = '<div class="empty-msg">-- EMPTY --</div>';
+      return;
+    }
+    clips.forEach(clip=>{
+      const item = document.createElement('div');
+      item.className = 'clip-list-item' + (activeClip && activeClip.id===clip.id ? ' is-active' : '');
+      const name = document.createElement('div'); name.className = 'name'; name.textContent = clip.file.name;
+      const dur = document.createElement('div'); dur.className = 'dur'; dur.textContent = fmt(clip.duration);
+      item.append(name, dur);
+      item.addEventListener('click', ()=> selectClip(clip));
+      clipList.appendChild(item);
+    });
+  }
+
+  function selectClip(clip){
+    activeClip = clip;
+    activeSection.style.display = 'block';
+    activePreview.src = clip.url;
+    renderClipList();
+    renderActivePanel();
+  }
+
+  function renderActivePanel(){
+    const clip = activeClip;
+
+    // fps buttons
+    fpsChoiceRow.querySelectorAll('.choice-btn').forEach(b=>{
+      b.classList.toggle('is-selected', parseFloat(b.dataset.value) === clip.fps);
+      b.onclick = ()=>{
+        clip.fps = parseFloat(b.dataset.value);
+        fpsChoiceRow.querySelectorAll('.choice-btn').forEach(x=> x.classList.remove('is-selected'));
+        b.classList.add('is-selected');
+        updateEstimate();
+      };
+    });
+
+    // IN / OUT pickers
+    inRowWrap.querySelectorAll('.time-picker').forEach(el=> el.remove());
+    outRowWrap.querySelectorAll('.time-picker').forEach(el=> el.remove());
+    const inPicker = createTimePicker(()=>clip.inPoint, (v)=>{
+      if(v >= clip.outPoint) v = Math.max(0, clip.outPoint - 0.05);
+      clip.inPoint = v;
+      activePreview.currentTime = v;
+      updateEstimate();
+    }, clip.duration);
+    const outPicker = createTimePicker(()=>clip.outPoint, (v)=>{
+      if(v <= clip.inPoint) v = Math.min(clip.duration, clip.inPoint + 0.05);
+      clip.outPoint = v;
+      activePreview.currentTime = v;
+      updateEstimate();
+    }, clip.duration);
+    inRowWrap.appendChild(inPicker.el);
+    outRowWrap.appendChild(outPicker.el);
+
+    // mark row: IN button / scrub bar / OUT button
+    markRowWrap.innerHTML = '';
+    const markInBtn = document.createElement('button');
+    markInBtn.className = 'btn'; markInBtn.textContent = 'IN ← 再生位置';
+    const scrubRange = document.createElement('input');
+    scrubRange.type = 'range'; scrubRange.className = 'scrub-range';
+    scrubRange.min = 0; scrubRange.max = clip.duration; scrubRange.step = 0.01; scrubRange.value = activePreview.currentTime || 0;
+    const markOutBtn = document.createElement('button');
+    markOutBtn.className = 'btn'; markOutBtn.textContent = 'OUT ← 再生位置';
+    scrubRange.addEventListener('input', ()=>{
+      activePreview.pause();
+      activePreview.currentTime = parseFloat(scrubRange.value);
+    });
+    activePreview.ontimeupdate = ()=>{ scrubRange.value = activePreview.currentTime; };
+    markInBtn.addEventListener('click', ()=>{
+      let v = activePreview.currentTime;
+      if(v >= clip.outPoint) v = Math.max(0, clip.outPoint - 0.05);
+      clip.inPoint = v; inPicker.refresh(); updateEstimate();
+    });
+    markOutBtn.addEventListener('click', ()=>{
+      let v = activePreview.currentTime;
+      if(v <= clip.inPoint) v = Math.min(clip.duration, clip.inPoint + 0.05);
+      clip.outPoint = v; outPicker.refresh(); updateEstimate();
+    });
+    markRowWrap.append(markInBtn, scrubRange, markOutBtn);
+
+    // reset results area when switching clips
+    generatedFrames = [];
+    thumbGrid.innerHTML = '';
+    shareBtn.style.display = 'none';
+    statusLine.textContent = '';
+    progressWrap.style.display = 'none';
+
+    updateEstimate();
+  }
+
+  function updateEstimate(){
+    const clip = activeClip;
+    if(!clip) return;
+    const step = 1/clip.fps;
+    const dur = Math.max(0, clip.outPoint - clip.inPoint);
+    const count = Math.max(0, Math.floor(dur/step) + 1);
+    estimateCount.textContent = count;
+    estimateDur.textContent = fmt(dur);
+  }
+
+  function showWarnModal(message){
+    return new Promise(resolve=>{
+      const modal = document.createElement('div');
+      modal.className = 'warn-modal';
+      const box = document.createElement('div');
+      box.className = 'warn-box';
+      const msg = document.createElement('p');
+      msg.textContent = message;
+      const btnRow = document.createElement('div');
+      btnRow.className = 'warn-btns';
+      const okBtn = document.createElement('button'); okBtn.className = 'btn'; okBtn.textContent = '続行する';
+      const cancelBtn = document.createElement('button'); cancelBtn.className = 'btn btn-dim'; cancelBtn.textContent = 'やめる';
+      okBtn.addEventListener('click', ()=>{ modal.remove(); resolve(true); });
+      cancelBtn.addEventListener('click', ()=>{ modal.remove(); resolve(false); });
+      btnRow.append(okBtn, cancelBtn);
+      box.append(msg, btnRow);
+      modal.append(box);
+      modal.addEventListener('click', (e)=>{ if(e.target===modal) resolve(false), modal.remove(); });
+      document.body.appendChild(modal);
+    });
+  }
+
+  generateBtn.addEventListener('click', async ()=>{
+    const clip = activeClip;
+    if(!clip) return;
+
+    const step = 1/clip.fps;
+    const dur = Math.max(0, clip.outPoint - clip.inPoint);
+    const count = Math.max(1, Math.floor(dur/step) + 1);
+
+    if(count > 60){
+      const proceed = await showWarnModal(count + '枚生成されます。枚数が多いとメモリ・共有シートの負荷が大きくなる可能性があります。続行しますか?');
+      if(!proceed) return;
+    }
+
+    generateBtn.classList.add('btn-disabled');
+    progressWrap.style.display = 'block';
+    progressBar.style.width = '0%';
+    thumbGrid.innerHTML = '';
+    shareBtn.style.display = 'none';
+    generatedFrames = [];
+
+    canvas.width = clip.videoEl.videoWidth || 1920;
+    canvas.height = clip.videoEl.videoHeight || 1080;
+
+    const baseName = timestampName();
+    let idx = 0;
+    let t = clip.inPoint;
+
+    activePreview.pause();
+
+    while(t <= clip.outPoint + 0.0001){
+      statusLine.textContent = '生成中... (' + (idx+1) + '/' + count + ')';
+      await seekTo(clip.videoEl, Math.min(t, clip.outPoint));
+      ctx.drawImage(clip.videoEl, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      idx++;
+      const fname = baseName + '_f' + String(idx).padStart(4,'0') + '.png';
+      generatedFrames.push({blob, name: fname});
+      progressBar.style.width = Math.min(100, (idx/count)*100) + '%';
+      t += step;
+    }
+
+    // thumbnail grid (cap displayed thumbnails; all frames are still included in the share)
+    const maxThumbs = 40;
+    generatedFrames.slice(0, maxThumbs).forEach(f=>{
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f.blob);
+      thumbGrid.appendChild(img);
+    });
+    if(generatedFrames.length > maxThumbs){
+      const more = document.createElement('div');
+      more.className = 'thumb-more';
+      more.textContent = '+' + (generatedFrames.length - maxThumbs) + ' 枚';
+      thumbGrid.appendChild(more);
+    }
+
+    statusLine.textContent = '完了。' + generatedFrames.length + '枚生成しました。';
+    generateBtn.classList.remove('btn-disabled');
+
+    const shareFiles = generatedFrames.map(f => new File([f.blob], f.name, {type:'image/png'}));
+    if(navigator.canShare && navigator.canShare({files: shareFiles})){
+      shareBtn.style.display = 'block';
+      shareBtn.onclick = async ()=>{
+        try{
+          await navigator.share({files: shareFiles, title: baseName});
+          statusLine.textContent = '保存完了。';
+          shareBtn.style.display = 'none';
+        }catch(err){
+          if(err && err.name !== 'AbortError'){
+            statusLine.textContent = '共有に失敗しました。もう一度お試しください。';
+          }
+        }
+      };
+    } else {
+      statusLine.textContent += '(この端末/ブラウザは複数画像の共有保存に非対応の可能性があります)';
+    }
+  });
+
+  renderClipList();
+})();
+</script>
+</body>
+</html>
