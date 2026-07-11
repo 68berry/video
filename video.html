@@ -81,13 +81,28 @@
   .seq-info .range{color:var(--dim);margin-left:6px;}
 
   .seq-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);
-    z-index:1000;display:flex;align-items:center;justify-content:center;}
-  .seq-confirm-video{max-width:100%;max-height:100%;background:#000;}
-  .seq-confirm-close{position:absolute;top:14px;right:14px;color:rgba(255,60,60,.55);
-    font-size:34px;font-weight:bold;line-height:1;padding:6px 10px;
-    text-shadow:0 0 6px rgba(0,0,0,.8);cursor:pointer;user-select:none;}
-  .seq-confirm-label{position:absolute;bottom:14px;left:0;right:0;text-align:center;
-    color:var(--dim);font-size:11px;letter-spacing:1px;}
+    z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .seq-confirm-video{max-width:100%;max-height:60vh;background:#000;flex-shrink:0;}
+  .seq-confirm-label{color:var(--dim);font-size:11px;letter-spacing:1px;margin-top:8px;text-align:center;}
+
+  .seq-confirm-editbar{width:100%;max-width:640px;padding:10px 14px 14px;box-sizing:border-box;}
+  .seq-confirm-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+  .seq-confirm-row label{width:30px;color:var(--dim);flex-shrink:0;}
+  .seq-confirm-row input[type=range]{flex:1;accent-color:#9a9a9a;}
+  .seq-confirm-time{width:64px;text-align:right;color:var(--bright);flex-shrink:0;
+    border:1px solid var(--border);padding:3px 4px;cursor:pointer;background:#181818;}
+  .seq-confirm-time-input{width:64px;text-align:right;color:var(--bright);flex-shrink:0;
+    border:1px solid var(--border-hi);padding:3px 4px;background:#181818;
+    font-family:inherit;font-size:inherit;}
+
+  .seq-overwrite-modal{position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.6);
+    display:flex;align-items:center;justify-content:center;}
+  .seq-overwrite-box{background:var(--panel);border:1px solid var(--border);
+    border-top-color:var(--border-hi);border-left-color:var(--border-hi);
+    padding:16px;max-width:280px;text-align:center;}
+  .seq-overwrite-box p{margin:0 0 14px;color:var(--text);}
+  .seq-overwrite-btns{display:flex;gap:8px;}
+  .seq-overwrite-btns .btn{flex:1;}
   .seq-btns{display:flex;gap:3px;flex-shrink:0;}
   .seq-btns .btn{padding:4px 7px;font-size:11px;}
   .seq-total{margin-top:8px;color:var(--dim);border-top:1px dashed var(--border);padding-top:6px;}
@@ -393,44 +408,167 @@
     const overlay = document.createElement('div');
     overlay.className = 'seq-confirm-overlay';
 
+    let workingIn = seqItem.inPoint;
+    let workingOut = seqItem.outPoint;
+
     const vid = document.createElement('video');
     vid.className = 'seq-confirm-video';
     vid.src = clip.url;
     vid.playsInline = true;
     vid.controls = false;
     vid.muted = false;
-
-    const closeBtn = document.createElement('div');
-    closeBtn.className = 'seq-confirm-close';
-    closeBtn.textContent = '✕';
+    vid.__fps = clip.fps;
 
     const label = document.createElement('div');
     label.className = 'seq-confirm-label';
-    label.textContent = seqItem.name + '  ' + fmt(seqItem.inPoint) + '→' + fmt(seqItem.outPoint);
+    label.textContent = seqItem.name;
 
-    function close(){
+    const editBar = document.createElement('div');
+    editBar.className = 'seq-confirm-editbar';
+
+    const inRow = document.createElement('div');
+    inRow.className = 'seq-confirm-row';
+    const inLabel = document.createElement('label'); inLabel.textContent = 'IN';
+    const inRange = document.createElement('input');
+    inRange.type = 'range'; inRange.min = 0; inRange.max = clip.duration; inRange.step = 0.01; inRange.value = workingIn;
+    const inTime = document.createElement('span');
+    inTime.className = 'seq-confirm-time';
+    inTime.textContent = fmt(workingIn);
+    inRow.append(inLabel, inRange, inTime);
+
+    const outRow = document.createElement('div');
+    outRow.className = 'seq-confirm-row';
+    const outLabel = document.createElement('label'); outLabel.textContent = 'OUT';
+    const outRange = document.createElement('input');
+    outRange.type = 'range'; outRange.min = 0; outRange.max = clip.duration; outRange.step = 0.01; outRange.value = workingOut;
+    const outTime = document.createElement('span');
+    outTime.className = 'seq-confirm-time';
+    outTime.textContent = fmt(workingOut);
+    outRow.append(outLabel, outRange, outTime);
+
+    editBar.append(inRow, outRow);
+
+    function updateInDisplay(){ inRange.value = workingIn; inTime.textContent = fmt(workingIn); }
+    function updateOutDisplay(){ outRange.value = workingOut; outTime.textContent = fmt(workingOut); }
+
+    inRange.addEventListener('input', ()=>{
+      let v = parseFloat(inRange.value);
+      if(v >= workingOut) v = Math.max(0, workingOut - 0.05);
+      workingIn = v;
+      inTime.textContent = fmt(v);
       vid.pause();
-      vid.removeEventListener('timeupdate', loopHandler);
-      overlay.remove();
+      vid.currentTime = v;
+    });
+    outRange.addEventListener('input', ()=>{
+      let v = parseFloat(outRange.value);
+      if(v <= workingIn) v = Math.min(clip.duration, workingIn + 0.05);
+      workingOut = v;
+      outTime.textContent = fmt(v);
+      vid.pause();
+      vid.currentTime = v;
+    });
+
+    function makeEditable(spanEl, getVal, setVal, maxVal){
+      spanEl.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.inputMode = 'decimal';
+        input.className = 'seq-confirm-time-input';
+        input.value = getVal().toFixed(2);
+        spanEl.replaceWith(input);
+        input.focus();
+        input.select();
+        function commit(){
+          let v = parseFloat(input.value);
+          if(isNaN(v)) v = getVal();
+          v = Math.max(0, Math.min(maxVal, v));
+          setVal(v);
+          input.replaceWith(spanEl);
+        }
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', (ev)=>{
+          if(ev.key === 'Enter'){ ev.preventDefault(); commit(); }
+          if(ev.key === 'Escape'){ input.value = getVal().toFixed(2); commit(); }
+        });
+      });
     }
+    makeEditable(inTime, ()=>workingIn, (v)=>{
+      if(v >= workingOut) v = Math.max(0, workingOut - 0.05);
+      workingIn = v; updateInDisplay(); vid.pause(); vid.currentTime = v;
+    }, clip.duration);
+    makeEditable(outTime, ()=>workingOut, (v)=>{
+      if(v <= workingIn) v = Math.min(clip.duration, workingIn + 0.05);
+      workingOut = v; updateOutDisplay(); vid.pause(); vid.currentTime = v;
+    }, clip.duration);
+
     function loopHandler(){
-      if(vid.currentTime >= seqItem.outPoint){
-        vid.currentTime = seqItem.inPoint;
+      if(vid.currentTime >= workingOut){
+        vid.currentTime = workingIn;
         vid.play().catch(()=>{});
       }
     }
     vid.addEventListener('loadedmetadata', ()=>{
-      vid.currentTime = seqItem.inPoint;
+      vid.currentTime = workingIn;
       vid.play().catch(()=>{});
     });
     vid.addEventListener('timeupdate', loopHandler);
-
-    // tapping anywhere on this screen other than the close mark returns to the clip screen
-    overlay.addEventListener('click', close);
-    closeBtn.addEventListener('click', (e)=>{ e.stopPropagation(); close(); });
     vid.addEventListener('click', (e)=> e.stopPropagation());
 
-    overlay.append(vid, closeBtn, label);
+    activePreviewEl = vid; // let arrow keys fine-tune the playhead here too
+
+    function finish(){
+      vid.pause();
+      vid.removeEventListener('timeupdate', loopHandler);
+      activePreviewEl = null;
+      overlay.remove();
+    }
+
+    function showOverwriteConfirm(){
+      const modal = document.createElement('div');
+      modal.className = 'seq-overwrite-modal';
+      const box = document.createElement('div');
+      box.className = 'seq-overwrite-box';
+      const msg = document.createElement('p');
+      msg.textContent = '編集内容を上書きしますか?';
+      const btnRow = document.createElement('div');
+      btnRow.className = 'seq-overwrite-btns';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn'; saveBtn.textContent = '上書きする';
+      const discardBtn = document.createElement('button');
+      discardBtn.className = 'btn btn-dim'; discardBtn.textContent = '破棄する';
+      saveBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        seqItem.inPoint = workingIn;
+        seqItem.outPoint = workingOut;
+        renderSequence();
+        modal.remove();
+        finish();
+      });
+      discardBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        modal.remove();
+        finish();
+      });
+      modal.addEventListener('click', (e)=> e.stopPropagation()); // require an explicit choice
+      btnRow.append(saveBtn, discardBtn);
+      box.append(msg, btnRow);
+      modal.append(box);
+      overlay.append(modal);
+    }
+
+    // tapping anywhere on this screen other than the video/edit controls attempts to close;
+    // if IN/OUT were changed, ask whether to overwrite before actually closing
+    overlay.addEventListener('click', ()=>{
+      if(workingIn !== seqItem.inPoint || workingOut !== seqItem.outPoint){
+        showOverwriteConfirm();
+      } else {
+        finish();
+      }
+    });
+    editBar.addEventListener('click', (e)=> e.stopPropagation());
+
+    overlay.append(vid, label, editBar);
     document.body.appendChild(overlay);
   }
 
