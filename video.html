@@ -28,7 +28,9 @@
     border-top-color:var(--border-hi);border-left-color:var(--border-hi);
     border-bottom-color:var(--border-lo);border-right-color:var(--border-lo);
     margin-bottom:10px;letter-spacing:1px;}
-  .titlebar b{color:var(--bright);font-weight:normal;}
+  .title-link{background:none;border:none;color:var(--bright);font-family:inherit;
+    font-size:13px;letter-spacing:1px;cursor:pointer;padding:0;display:flex;align-items:center;}
+  .title-link:active{opacity:.7;}
   .cursor{display:inline-block;width:7px;height:13px;background:var(--bright);
     margin-left:2px;animation:blink 1.1s steps(1) infinite;vertical-align:-2px;}
   @keyframes blink{0%,49%{opacity:1;}50%,100%{opacity:0;}}
@@ -56,6 +58,7 @@
 
   .clip-item{border:1px solid var(--border);padding:8px;margin-bottom:8px;background:#181818;}
   .clip-item video.clip-preview{width:100%;max-height:160px;background:#000;display:block;margin-bottom:6px;}
+  .clip-item.is-active-preview{border-color:var(--bright);}
   .clip-name{color:var(--bright);margin-bottom:6px;word-break:break-all;}
   .trim-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
   .trim-row label{width:34px;color:var(--dim);flex-shrink:0;}
@@ -99,7 +102,7 @@
 <body>
 <div id="app">
 
-  <div class="titlebar"><b>&gt;&gt; CLIP_STUDIO</b><span class="cursor"></span></div>
+  <div class="titlebar"><button class="title-link" id="titleLinkBtn">very berry video&#127811;&#129812;</button><span class="cursor"></span></div>
 
   <div class="section">
     <div class="section-header"><b>&gt;&gt; CLIPS</b></div>
@@ -153,6 +156,31 @@
   let sequence = []; // {clipId, inPoint, outPoint, name}
   let clipCounter = 0;
   let audioCtx = null;
+  let activePreviewEl = null;
+  const FRAME_STEP = 1/30; // assumed frame duration for arrow-key stepping
+
+  document.getElementById('titleLinkBtn').addEventListener('click', ()=>{
+    window.open('https://68berry.github.io/video/', '_blank');
+  });
+
+  function setActivePreview(itemEl, videoEl){
+    document.querySelectorAll('.clip-item.is-active-preview').forEach(el=> el.classList.remove('is-active-preview'));
+    itemEl.classList.add('is-active-preview');
+    activePreviewEl = videoEl;
+  }
+
+  document.addEventListener('keydown', (e)=>{
+    if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if(document.activeElement && document.activeElement.tagName === 'INPUT') return; // let range sliders handle their own arrows
+    if(!activePreviewEl) return;
+    e.preventDefault();
+    activePreviewEl.pause();
+    const dir = e.key === 'ArrowRight' ? 1 : -1;
+    const step = e.shiftKey ? FRAME_STEP * 10 : FRAME_STEP;
+    let t = activePreviewEl.currentTime + dir * step;
+    t = Math.max(0, Math.min(activePreviewEl.duration || t, t));
+    activePreviewEl.currentTime = t;
+  });
 
   function fmt(t){
     if(!isFinite(t)) t = 0;
@@ -198,6 +226,8 @@
     preview.muted = true;
     preview.playsInline = true;
     preview.controls = true;
+    preview.addEventListener('click', ()=> setActivePreview(item, preview));
+    preview.addEventListener('play', ()=> setActivePreview(item, preview));
 
     const nameDiv = document.createElement('div');
     nameDiv.className = 'clip-name';
