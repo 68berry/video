@@ -76,9 +76,18 @@
     padding:6px 0;}
   .seq-item:last-child{border-bottom:none;}
   .seq-idx{color:var(--dim);width:18px;flex-shrink:0;}
-  .seq-info{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .seq-info{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
   .seq-info .name{color:var(--bright);}
   .seq-info .range{color:var(--dim);margin-left:6px;}
+
+  .seq-confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);
+    z-index:1000;display:flex;align-items:center;justify-content:center;}
+  .seq-confirm-video{max-width:100%;max-height:100%;background:#000;}
+  .seq-confirm-close{position:absolute;top:14px;right:14px;color:rgba(255,60,60,.55);
+    font-size:34px;font-weight:bold;line-height:1;padding:6px 10px;
+    text-shadow:0 0 6px rgba(0,0,0,.8);cursor:pointer;user-select:none;}
+  .seq-confirm-label{position:absolute;bottom:14px;left:0;right:0;text-align:center;
+    color:var(--dim);font-size:11px;letter-spacing:1px;}
   .seq-btns{display:flex;gap:3px;flex-shrink:0;}
   .seq-btns .btn{padding:4px 7px;font-size:11px;}
   .seq-total{margin-top:8px;color:var(--dim);border-top:1px dashed var(--border);padding-top:6px;}
@@ -380,6 +389,51 @@
     clipList.appendChild(item);
   }
 
+  function openSequenceConfirm(seqItem, clip){
+    const overlay = document.createElement('div');
+    overlay.className = 'seq-confirm-overlay';
+
+    const vid = document.createElement('video');
+    vid.className = 'seq-confirm-video';
+    vid.src = clip.url;
+    vid.playsInline = true;
+    vid.controls = false;
+    vid.muted = false;
+
+    const closeBtn = document.createElement('div');
+    closeBtn.className = 'seq-confirm-close';
+    closeBtn.textContent = '✕';
+
+    const label = document.createElement('div');
+    label.className = 'seq-confirm-label';
+    label.textContent = seqItem.name + '  ' + fmt(seqItem.inPoint) + '→' + fmt(seqItem.outPoint);
+
+    function close(){
+      vid.pause();
+      vid.removeEventListener('timeupdate', loopHandler);
+      overlay.remove();
+    }
+    function loopHandler(){
+      if(vid.currentTime >= seqItem.outPoint){
+        vid.currentTime = seqItem.inPoint;
+        vid.play().catch(()=>{});
+      }
+    }
+    vid.addEventListener('loadedmetadata', ()=>{
+      vid.currentTime = seqItem.inPoint;
+      vid.play().catch(()=>{});
+    });
+    vid.addEventListener('timeupdate', loopHandler);
+
+    // tapping anywhere on this screen other than the close mark returns to the clip screen
+    overlay.addEventListener('click', close);
+    closeBtn.addEventListener('click', (e)=>{ e.stopPropagation(); close(); });
+    vid.addEventListener('click', (e)=> e.stopPropagation());
+
+    overlay.append(vid, closeBtn, label);
+    document.body.appendChild(overlay);
+  }
+
   function renderSequence(){
     seqList.innerHTML = '';
     if(sequence.length === 0){
@@ -398,6 +452,10 @@
         const dur = seqItem.outPoint - seqItem.inPoint;
         info.innerHTML = '<span class="name">'+seqItem.name+'</span><span class="range">'
           + fmt(seqItem.inPoint)+'→'+fmt(seqItem.outPoint)+' ('+fmt(dur)+')</span>';
+        info.addEventListener('click', ()=>{
+          const srcClip = clips.find(c=>c.id===seqItem.clipId);
+          if(srcClip) openSequenceConfirm(seqItem, srcClip);
+        });
 
         const btns = document.createElement('div');
         btns.className = 'seq-btns';
@@ -512,7 +570,7 @@
     progressWrap.style.display = 'block';
     progressBar.style.width = '0%';
     outputVideo.style.display = 'none';
-    downloadLink.style.display = 'none';
+    shareBtn.style.display = 'none';
     statusLine.textContent = '準備中...';
 
     const [cw, ch] = selectedRes.split('x').map(Number);
@@ -592,10 +650,6 @@
     const outName = timestampName() + '.' + fileExt;
     outputVideo.src = url;
     outputVideo.style.display = 'block';
-    downloadLink.href = url;
-    downloadLink.download = outName;
-    downloadLink.textContent = '↓ DOWNLOAD .' + fileExt;
-    downloadLink.style.display = 'block';
     statusLine.textContent = '完了 (.' + fileExt + ' / ' + outName + ')。書き出しサイズ: ' + (blob.size/1024/1024).toFixed(1) + ' MB';
     renderBtn.classList.remove('btn-disabled');
 
@@ -605,14 +659,23 @@
       shareBtn.onclick = async ()=>{
         try{
           await navigator.share({files:[shareFile], title: outName});
+          // Share sheet closed without throwing -> treat as a successful save.
+          // Clean up: release the in-memory blob/URL now that it's been handed off.
+          statusLine.textContent = '保存完了。書き出しデータを解放しました。';
+          URL.revokeObjectURL(url);
+          outputVideo.removeAttribute('src');
+          outputVideo.load();
+          outputVideo.style.display = 'none';
+          shareBtn.style.display = 'none';
         }catch(err){
           if(err && err.name !== 'AbortError'){
-            statusLine.textContent = '共有に失敗しました。DOWNLOADボタンから保存してください。';
+            statusLine.textContent = '共有に失敗しました。もう一度お試しください。';
           }
         }
       };
     } else {
       shareBtn.style.display = 'none';
+      statusLine.textContent += '(この端末/ブラウザは共有保存に非対応です。プレビュー動画を長押しして保存してください)';
     }
   });
 
