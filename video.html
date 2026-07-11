@@ -85,6 +85,11 @@
   .seq-total b{color:var(--bright);font-weight:normal;}
   .empty-msg{color:var(--dim);padding:6px 0;}
 
+  .choice-row{display:flex;gap:6px;margin-bottom:8px;}
+  .choice-btn{flex:1;padding:8px 4px;font-size:12px;}
+  .choice-btn.is-selected{background:var(--bright);color:#111;border-color:var(--border-lo);
+    border-top-color:var(--border-lo);border-left-color:var(--border-lo);
+    border-bottom-color:var(--border-hi);border-right-color:var(--border-hi);}
   select{background:var(--panel);color:var(--text);border:1px solid var(--border);
     font-family:inherit;padding:6px;width:100%;margin-bottom:8px;}
   label.field-label{color:var(--dim);display:block;margin-bottom:4px;}
@@ -102,7 +107,7 @@
 <body>
 <div id="app">
 
-  <div class="titlebar"><button class="title-link" id="titleLinkBtn">very berry video&#127811;&#129812;</button><span class="cursor"></span></div>
+  <div class="titlebar"><button class="title-link" id="titleLinkBtn">very berry video&#x1F353;&#x1FAD0;</button><span class="cursor"></span></div>
 
   <div class="section">
     <div class="section-header"><b>&gt;&gt; CLIPS</b></div>
@@ -119,12 +124,17 @@
 
   <div class="section">
     <div class="section-header"><b>&gt;&gt; OUTPUT</b></div>
-    <label class="field-label">RESOLUTION (4K非対応 / 1080p以下)</label>
-    <select id="resSelect">
-      <option value="1920x1080">1080p — 1920x1080</option>
-      <option value="1280x720" selected>720p — 1280x720</option>
-      <option value="960x540">540p — 960x540</option>
-    </select>
+    <label class="field-label">RESOLUTION (1080p / 720p のみ)</label>
+    <div class="choice-row" id="resChoiceRow">
+      <button class="btn choice-btn is-selected" data-value="1920x1080">1080p</button>
+      <button class="btn choice-btn" data-value="1280x720">720p</button>
+    </div>
+    <label class="field-label">EXPORT FPS</label>
+    <div class="choice-row" id="fpsChoiceRow">
+      <button class="btn choice-btn is-selected" data-value="30">30fps</button>
+      <button class="btn choice-btn" data-value="24">24fps</button>
+      <button class="btn choice-btn" data-value="23.976">23.976fps</button>
+    </div>
     <button class="btn btn-block" id="renderBtn">RENDER</button>
     <div id="progressWrap"><div id="progressBar"></div></div>
     <div id="statusLine"></div>
@@ -150,17 +160,30 @@
   const ctx = canvas.getContext('2d');
   const outputVideo = document.getElementById('outputVideo');
   const downloadLink = document.getElementById('downloadLink');
-  const resSelect = document.getElementById('resSelect');
+  const resChoiceRow = document.getElementById('resChoiceRow');
+  const fpsChoiceRow = document.getElementById('fpsChoiceRow');
+  let selectedRes = '1920x1080';
+  let selectedFps = '30';
+  function wireChoiceRow(row, onSelect){
+    row.querySelectorAll('.choice-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        row.querySelectorAll('.choice-btn').forEach(b=> b.classList.remove('is-selected'));
+        btn.classList.add('is-selected');
+        onSelect(btn.dataset.value);
+      });
+    });
+  }
+  wireChoiceRow(resChoiceRow, (v)=>{ selectedRes = v; });
+  wireChoiceRow(fpsChoiceRow, (v)=>{ selectedFps = v; });
 
   let clips = [];   // {id, file, url, videoEl, duration, inPoint, outPoint, gainNode, sourceNode}
   let sequence = []; // {clipId, inPoint, outPoint, name}
   let clipCounter = 0;
   let audioCtx = null;
   let activePreviewEl = null;
-  const FRAME_STEP = 1/30; // assumed frame duration for arrow-key stepping
 
   document.getElementById('titleLinkBtn').addEventListener('click', ()=>{
-    window.open('https://68berry.github.io/video/', '_blank');
+    window.open('https://github.com/68berry/video/', '_blank');
   });
 
   function setActivePreview(itemEl, videoEl){
@@ -171,12 +194,13 @@
 
   document.addEventListener('keydown', (e)=>{
     if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    if(document.activeElement && document.activeElement.tagName === 'INPUT') return; // let range sliders handle their own arrows
+    if(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT')) return;
     if(!activePreviewEl) return;
     e.preventDefault();
     activePreviewEl.pause();
     const dir = e.key === 'ArrowRight' ? 1 : -1;
-    const step = e.shiftKey ? FRAME_STEP * 10 : FRAME_STEP;
+    const frameDur = 1 / (activePreviewEl.__fps || 30);
+    const step = e.shiftKey ? frameDur * 10 : frameDur;
     let t = activePreviewEl.currentTime + dir * step;
     t = Math.max(0, Math.min(activePreviewEl.duration || t, t));
     activePreviewEl.currentTime = t;
@@ -205,7 +229,7 @@
     videoEl.muted = true; // audio routed separately via Web Audio at render time
     videoEl.playsInline = true;
 
-    const clip = {id, file, url, videoEl, duration:0, inPoint:0, outPoint:0, audioOn:true, gainNode:null, sourceNode:null};
+    const clip = {id, file, url, videoEl, duration:0, inPoint:0, outPoint:0, audioOn:true, fps:30, gainNode:null, sourceNode:null};
     clips.push(clip);
 
     videoEl.addEventListener('loadedmetadata', ()=>{
@@ -232,6 +256,19 @@
     const nameDiv = document.createElement('div');
     nameDiv.className = 'clip-name';
     nameDiv.textContent = clip.file.name + '  ('+fmt(clip.duration)+')';
+
+    const fpsRow = document.createElement('div');
+    fpsRow.className = 'trim-row';
+    const fpsLabel = document.createElement('label'); fpsLabel.textContent = 'FPS';
+    const fpsSel = document.createElement('select');
+    fpsSel.innerHTML = '<option value="30" selected>30fps</option><option value="24">24fps</option><option value="23.976">23.976fps (23)</option>';
+    fpsSel.style.flex = '1';
+    fpsSel.addEventListener('change', ()=>{
+      clip.fps = parseFloat(fpsSel.value);
+      preview.__fps = clip.fps;
+    });
+    fpsRow.append(fpsLabel, fpsSel);
+    preview.__fps = clip.fps;
 
     const inRow = document.createElement('div');
     inRow.className = 'trim-row';
@@ -319,7 +356,7 @@
     });
     actions.append(audioBtn, addSeqBtn);
 
-    item.append(preview, nameDiv, markRow, inRow, outRow, actions);
+    item.append(preview, nameDiv, fpsRow, markRow, inRow, outRow, actions);
     clipList.appendChild(item);
   }
 
@@ -438,7 +475,7 @@
     downloadLink.style.display = 'none';
     statusLine.textContent = '準備中...';
 
-    const [cw, ch] = resSelect.value.split('x').map(Number);
+    const [cw, ch] = selectedRes.split('x').map(Number);
     canvas.width = cw; canvas.height = ch;
 
     if(!audioCtx){
@@ -456,7 +493,7 @@
       ensureAudioSetup(clip);
     });
 
-    const canvasStream = canvas.captureStream(30);
+    const canvasStream = canvas.captureStream(parseFloat(selectedFps));
     const combined = new MediaStream([
       ...canvasStream.getVideoTracks(),
       ...window.__csDest.stream.getAudioTracks()
